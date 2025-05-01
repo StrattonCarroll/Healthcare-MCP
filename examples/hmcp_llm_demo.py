@@ -120,9 +120,9 @@ class EMRWritebackAgent:
             port=WRITEBACK_PORT,  # Match the port expected by MCP inspector
             debug=True,  # Enable debug mode for development
             log_level=LOG_LEVEL,
-            instructions="This agent handles writing clinical data to electronic medical records."
+            instructions="This agent handles writing clinical data to electronic medical records.",
+            enable_guardrails=True  # Enable built-in guardrail checks
         )
-        self.guardrail = Guardrail()
         
         # Keep track of conversation history
         self.conversation_history = {}
@@ -165,20 +165,7 @@ All your responses must follow healthcare documentation best practices."""
 
             logger.info(f"EMR WRITEBACK: Processing message: {message_content}")
 
-            # Apply guardrail checks
-            try:
-                await self.guardrail.run(message_content)
-            except Exception as e:
-                logger.error(f"EMR WRITEBACK: Guardrail blocked message: {str(e)}")
-                return types.CreateMessageResult(
-                    model="emr-writeback-agent",
-                    role="assistant",
-                    content=types.TextContent(
-                        type="text",
-                        text="I'm sorry, I cannot process that request due to security constraints."
-                    ),
-                    stopReason="endTurn"
-                )
+            # Note: Guardrail checks are now handled automatically by the HMCPServer
 
             # Get conversation ID for this session or create new one
             # Use the session context as a hash to identify the conversation
@@ -244,8 +231,8 @@ class PatientDataAccessAgent:
             port=PATIENT_DATA_PORT,  # Match the port expected by MCP inspector
             debug=True,  # Enable debug mode for development
             log_level=LOG_LEVEL,
+            enable_guardrails=False  # Disable built-in guardrail checks
         )
-        self.guardrail = Guardrail()
 
         # Sample patient database
         self.patient_db = {
@@ -297,20 +284,7 @@ Your primary goal is to help healthcare providers find the correct patient ident
 
             logger.info(f"PATIENT DATA: Processing message: {message_content}")
 
-            # Apply guardrail checks
-            try:
-                await self.guardrail.run(message_content)
-            except Exception as e:
-                logger.error(f"PATIENT DATA: Guardrail blocked message: {str(e)}")
-                return types.CreateMessageResult(
-                    model="patient-data-agent",
-                    role="assistant",
-                    content=types.TextContent(
-                        type="text",
-                        text="I'm sorry, I cannot process that request due to security constraints."
-                    ),
-                    stopReason="endTurn"
-                )
+            # Note: Guardrail checks are now handled automatically by the HMCPServer
 
             # Get conversation ID for this session or create new one
             # Use the session context as a hash to identify the conversation

@@ -15,6 +15,7 @@ from mcp.server.models import InitializationOptions
 from pydantic import RootModel
 from hmcp.auth import OAuthServer, AuthConfig, jwt_handler
 from hmcp.mcpserver.fastmcp_auth import AuthMiddleware
+from hmcp.mcpserver.guardrail import Guardrail, GuardrailException
 
 # Configure logging for the HMCP server module
 logger = logging.getLogger(__name__)
@@ -110,6 +111,9 @@ class HMCPServer(FastMCP):
         version: str | None = None,
         instructions: str | None = None,
         samplingCallback: SamplingFnT | None = None,
+        enable_guardrails: bool = True,
+        guardrail_config_path: Optional[str] = None,
+        guardrail_instance: Optional[Guardrail] = None,
         *args,
         **kwargs
     ):
@@ -122,6 +126,9 @@ class HMCPServer(FastMCP):
             instructions: Human-readable instructions for using the server (optional)
             samplingCallback: A callback function to handle sampling requests (optional)
                               If not provided, the server will return errors for sampling requests
+            enable_guardrails: Whether to enable guardrail checks for incoming messages (default: True)
+            guardrail_config_path: Custom path to guardrail configuration (default: None, uses standard path)
+            guardrail_instance: Pre-configured Guardrail instance (default: None, creates a new instance)
             **kwargs: Additional settings to pass to the underlying FastMCP implementation
                        These can include configuration for logging, transports, etc.
         """
@@ -134,6 +141,19 @@ class HMCPServer(FastMCP):
         self.oauth_server = OAuthServer(self.auth_config)
         self.jwt_handler = jwt_handler.JWTHandler(self.auth_config)
 
+        # Initialize guardrails
+        self.enable_guardrails = enable_guardrails
+        if enable_guardrails:
+            if guardrail_instance:
+                self.guardrail = guardrail_instance
+            elif guardrail_config_path:
+                self.guardrail = Guardrail(config_path=guardrail_config_path)
+            else:
+                self.guardrail = Guardrail()
+            logger.info(f"Guardrails enabled for {name} server")
+        else:
+            self.guardrail = None
+            logger.info(f"Guardrails disabled for {name} server")
 
         # Define experimental capabilities with sampling for advertisement to clients
         # This allows clients to detect that this server supports HMCP sampling features
@@ -141,6 +161,7 @@ class HMCPServer(FastMCP):
             "hmcp": {
                 "sampling": True,
                 "version": "0.1.0",
+                "guardrails": enable_guardrails
             }
         }
         
@@ -204,6 +225,34 @@ class HMCPServer(FastMCP):
             # Get the current request context from the MCP server
             # This contains information about the client and the request
             ctx = self._mcp_server.request_context
+            
+            # Extract message content for guardrail checks
+            if self.enable_guardrails and self.guardrail:
+                latest_message = req.params.messages[-1] if req.params.messages else None
+                if latest_message:
+                    message_content = ""
+                    if isinstance(latest_message.content, list):
+                        message_content = "".join([
+                            content.text for content in latest_message.content
+                            if isinstance(content, types.TextContent)
+                        ])
+                    elif isinstance(latest_message.content, types.TextContent):
+                        message_content = latest_message.content.text
+                    
+                    logger.debug(f"Running guardrail check on message: {message_content[:100]}...")
+                    
+                    # Apply guardrail checks
+                    try:
+                        await self.guardrail.run(message_content)
+                    except GuardrailException as e:
+                        logger.warning(f"Guardrail blocked message: {str(e)}")
+                        return types.ErrorData(
+                            code=types.INVALID_REQUEST,
+                            message=f"Request blocked by guardrails: {str(e)}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error in guardrail check: {str(e)}")
+                        # Continue processing if guardrail fails for any reason
             
             # Process the request using the registered sampling callback
             # The callback is responsible for generating text based on the provided messages

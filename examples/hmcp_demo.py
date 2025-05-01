@@ -70,9 +70,9 @@ class EMRWritebackAgent:
             port=WRITEBACK_PORT,  # Match the port expected by MCP inspector
             debug=True,  # Enable debug mode for development
             log_level=LOG_LEVEL,
-            instructions="This agent handles writing clinical data to electronic medical records."
+            instructions="This agent handles writing clinical data to electronic medical records.",
+            enable_guardrails=True  # Enable built-in guardrail checks
         )
-        self.guardrail = Guardrail()
 
         @self.server.sampling()
         async def handle_emr_writeback_sampling(
@@ -97,9 +97,7 @@ class EMRWritebackAgent:
             logger.info(
                 f"EMR WRITEBACK: Processing message: {message_content}")
 
-                    
-
-            await self.guardrail.run(message_content)
+            # Note: Guardrail checks are now handled automatically by the HMCPServer
 
             # Check if this is the first request (clinical data blob without patient ID)
             if "patient_id" not in message_content.lower() and "clinical_data" in message_content.lower():
