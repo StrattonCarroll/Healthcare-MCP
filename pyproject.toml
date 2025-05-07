@@ -21,6 +21,15 @@ dependencies = [
     "langchain-openai==0.3.14"
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.1",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.1",
+    "black==25.1.0"
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

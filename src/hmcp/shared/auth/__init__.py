@@ -5,15 +5,15 @@ from .exceptions import (
     AuthenticationError,
     InvalidTokenError,
     ClientValidationError,
-    ScopeError
+    ScopeError,
 )
 
 __all__ = [
-    'OAuthServer',
-    'OAuthClient',
-    'AuthConfig',
-    'AuthenticationError',
-    'InvalidTokenError',
-    'ClientValidationError',
-    'ScopeError'
+    "OAuthServer",
+    "OAuthClient",
+    "AuthConfig",
+    "AuthenticationError",
+    "InvalidTokenError",
+    "ClientValidationError",
+    "ScopeError",
 ]

@@ -158,4 +158,53 @@ See the `examples/hmcp_demo.py` file for a complete example of multi-agent commu
 
 The demo shows how agents can communicate with each other, request additional information, and use guardrails to protect against prompt injections.
 
+## _TODO_
 
+- Define way to configure auth parameters
+- Define way to configure guardrails
+- Define a way to query/publish server and client parameters
+- Explain how HMCP is different than MCP, in terms of Auth etc.
+
+
+## Development
+
+### Setting Up Development Environment
+
+1. Clone the repository
+2. Install the package in development mode with test dependencies:
+```bash
+pip install -e ".[test]"
+```
+
+### Running Tests
+
+The project uses pytest for testing. Here are some common test commands:
+
+```bash
+# Run all tests
+pytest
+
+# Run tests with coverage report
+pytest --cov=hmcp
+
+# Run tests in verbose mode
+pytest -v
+
+# Run specific test file
+pytest tests/test_specific_file.py
+
+# Run tests matching a specific pattern
+pytest -k "test_pattern"
+```
+
+### Code Style
+
+The project follows PEP 8 style guidelines. You can check your code style using:
+
+```bash
+# Install flake8 if not already installed
+pip install flake8
+```
+
+### TODO
+Need to replace with uv (Python package and project manager)

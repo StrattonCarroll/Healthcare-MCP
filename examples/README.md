@@ -1,17 +1,28 @@
-# HMCP-Example
+# HMCP Examples
 
-Healthcare MCP example
+Healthcare Model Context Protocol (HMCP) examples demonstrating various capabilities and implementations.
 
-### Feature
+## Table of Contents
+- [Features](#features)
+- [Available Examples](#available-examples)
+- [How to Run the Demo](#how-to-run-the-demo)
+- [HMCP Demo Workflow](#hmcp-demo-workflow)
+- [HMCP LLM Demo (GPT-4o Integration)](#hmcp-llm-demo-gpt-4o-integration)
+- [Multi-Agent Handoff Architecture](#multi-agent-handoff-architecture)
+
+## Features
 - Bidirectional communication
 - Authentication and Authorization
 - Guardrails
 
+## Available Examples
+- **Basic HMCP Demo**: Demonstrates core HMCP communication features
+- **HMCP LLM Demo**: Integrates OpenAI's GPT-4o with HMCP
+- **Multi-Agent Handoff**: Showcases complex workflows with multiple specialized agents
 
-### How to run the demo
+## How to Run the Demo
 
 ```bash
-
 # Temporary steps till the package isn't published:
 pip install hatch
 hatch build
@@ -21,7 +32,6 @@ cd examples
 
 # Install required dependencies using below command
 pip install -r requirements.txt
-
 
 # create .env by taking reference from .env.example
 # and define below ENV variables 
@@ -35,73 +45,64 @@ python hmcp_demo.py --emr-server
 # Open a new terminal and execute below commands
 python hmcp_demo.py --patient-data-server
 
-
 # Run the DEMO using client server with SSE transport (recommended)
 # Open a new terminal and execute below commands
 python hmcp_demo.py
-
 ```
 
-HMCP Demo Workflow Steps
-=======================
+## HMCP Demo Workflow
 
-This document outlines the steps performed in the hmcp_demo.py clinical data workflow demonstration.
-
-Overview
---------
+### Overview
 The demo involves three agents working together:
 1. AI Agent (Main Orchestrator)
 2. EMR Writeback Agent
 3. Patient Data Access Agent
 
-Detailed Workflow Steps
-----------------------
+### Detailed Workflow Steps
 
-1. Initial Setup
+1. **Initial Setup**
    - AI Agent initializes authentication components
    - Generates JWT token for secure communication
    - Sets up OAuth client with test credentials
 
-2. EMR Writeback Agent Connection
+2. **EMR Writeback Agent Connection**
    - AI Agent connects to EMR Writeback Agent
    - Establishes SSE (Server-Sent Events) connection
    - Initializes EMR session
 
-3. First Clinical Data Submission
+3. **First Clinical Data Submission**
    - AI Agent sends initial clinical data to EMR Writeback Agent
    - Data includes diagnosis, blood pressure, and medication information
    - Format: {"diagnosis": "Hypertension", "blood_pressure": "140/90", "medication": "Lisinopril 10mg"}
 
-4. Guardrail Testing
+4. **Guardrail Testing**
    - AI Agent tests the guardrail functionality
    - Sends a test message to verify security measures
    - Verifies proper response handling
 
-5. Patient Data Access
+5. **Patient Data Access**
    - EMR Writeback Agent requests additional information (patient ID)
    - AI Agent connects to Patient Data Access Agent
    - Requests patient identifier for "John Smith"
    - Receives patient ID (PT12345)
 
-6. Final EMR Update
+6. **Final EMR Update**
    - AI Agent sends complete data to EMR Writeback Agent
    - Includes both clinical data and patient ID
    - Receives confirmation of successful EMR update
 
-7. Workflow Completion
+7. **Workflow Completion**
    - All required information is processed
    - EMR system is updated successfully
    - Demo workflow is completed
 
 Note: The demo includes error handling and logging at each step to ensure proper execution and debugging capabilities.
 
-HMCP LLM Demo (GPT-4o Integration)
-=================================
+## HMCP LLM Demo (GPT-4o Integration)
 
 The `hmcp_llm_demo.py` file demonstrates an advanced version of the HMCP workflow that integrates OpenAI's GPT-4o to create intelligent agents that can generate dynamic, context-aware responses.
 
-Overview
---------
+### Overview
 Unlike the basic demo that uses predefined responses, the LLM demo employs three LLM-powered agents:
 
 1. **AI Agent (Main Orchestrator)**: Uses GPT-4o to plan and coordinate the entire workflow
@@ -110,16 +111,14 @@ Unlike the basic demo that uses predefined responses, the LLM demo employs three
 
 Each agent maintains its own conversation history and system prompt that defines its role and behavior.
 
-LLM Demo Features
----------------
+### LLM Demo Features
 - Context-aware responses from all agents
 - Dynamic workflow planning by the AI Orchestrator
 - Guardrail implementation to prevent prompt injection and unauthorized access
 - Simulated patient database with intelligent lookups
 - Conversation history maintenance for coherent multi-turn interactions
 
-How to Run the LLM Demo
----------------------
+### How to Run the LLM Demo
 
 ```bash
 # Ensure you have the required dependencies
@@ -150,8 +149,7 @@ python hmcp_llm_demo.py --patient-data-server
 python hmcp_llm_demo.py
 ```
 
-LLM Demo Workflow Steps
----------------------
+### LLM Demo Workflow Steps
 
 1. **AI Agent Planning**: The AI Agent uses GPT-4o to generate a comprehensive plan for the workflow.
 
@@ -229,8 +227,36 @@ sequenceDiagram
     Note over AI: Clinical workflow complete
 ```
 
-Technical Implementation Details
-------------------------------
+## Multi-Agent Handoff Architecture
+
+For more complex workflows involving multiple specialized agents, see the [Multi-Agent Handoff documentation](multi_agent_handoff.md), which details:
+
+- Architecture for orchestrating complex workflows between specialized agents
+- Dynamic routing of messages based on context and needs
+- Implementation of secure and compliant healthcare information exchange
+- Examples of multi-agent collaboration in healthcare settings
+
+To run the multi-agent handoff demo:
+
+```bash
+# Ensure you have the required dependencies
+cd examples
+pip install -r requirements.txt
+
+# Set up your environment variables (see .env.example)
+# Open separate terminals for each server:
+
+# Start the EMR server
+python hmcp_llm_demo.py --emr-server
+
+# Start the Patient Data server
+python hmcp_llm_demo.py --patient-data-server
+
+# Run the multi-agent handoff demo
+python multi_handoff_agent_demo.py
+```
+
+## Technical Implementation Details
 
 - Uses `AsyncOpenAI` client for non-blocking LLM calls
 - Implements conversation history management for each agent

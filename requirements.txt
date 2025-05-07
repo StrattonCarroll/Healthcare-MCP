@@ -1,3 +1,4 @@
+# Main dependencies
 asyncio>=3.4.3
 langchain-groq>=0.3.2
 mcp-use>=1.2.7
@@ -11,3 +12,10 @@ python-jose>=3.3.0
 cryptography>=41.0.0
 nemoguardrails==0.13.0
 langchain-openai==0.3.14
+
+# Test/Lint dependencies
+pytest==8.3.5
+pytest-asyncio==0.26.0
+pytest-mock==3.14.0
+black==25.1.0
+pytest-cov==6.1.1
