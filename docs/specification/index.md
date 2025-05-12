@@ -70,11 +70,3 @@ graph LR
         GATE <--> |HMCP|3PALGO
     end
 ```
-
-### _TODO_:
-
-- Add JSON specification
-- Add ability to define guardrails in specification/ or in experimental capabilities
-- Publish agent card
-- Add capability negotiation in client for sampling
-- Add a sequence diagram showing the complete flow with auth and guardrails

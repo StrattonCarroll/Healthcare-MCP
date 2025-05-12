@@ -158,14 +158,6 @@ See the `examples/hmcp_demo.py` file for a complete example of multi-agent commu
 
 The demo shows how agents can communicate with each other, request additional information, and use guardrails to protect against prompt injections.
 
-## _TODO_
-
-- Define way to configure auth parameters
-- Define way to configure guardrails
-- Define a way to query/publish server and client parameters
-- Explain how HMCP is different than MCP, in terms of Auth etc.
-
-
 ## Development
 
 ### Setting Up Development Environment
