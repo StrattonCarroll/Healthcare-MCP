@@ -2,9 +2,9 @@
 asyncio>=3.4.3
 langchain-groq>=0.3.2
 mcp-use>=1.2.7
-mcp[cli]>=1.6.0
+mcp[cli]==1.9.0
 nest-asyncio>=1.6.0
-fastmcp>=0.1.0
+fastmcp==2.3.4
 uvicorn>=0.27.0
 starlette>=0.36.0
 PyJWT>=2.8.0
@@ -12,6 +12,7 @@ python-jose>=3.3.0
 cryptography>=41.0.0
 nemoguardrails==0.13.0
 langchain-openai==0.3.14
+openai-agents==0.0.16
 
 # Test/Lint dependencies
 pytest==8.3.5

@@ -14,7 +14,12 @@ from hmcp.shared.auth import (
     InvalidTokenError,
     ScopeError,
 )
+from starlette.authentication import AuthenticationError
+from starlette.requests import HTTPConnection
+from starlette.responses import PlainTextResponse, Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 import logging
+import typing
 
 logger = logging.getLogger(__name__)
 
@@ -26,24 +31,46 @@ class AuthMiddleware(BaseHTTPMiddleware):
     Supports patient-context restrictions as defined in SMART on FHIR.
     """
 
-    def __init__(self, app, auth_config: AuthConfig):
-        logger.info("Initializing AuthMiddleware")
-        super().__init__(app)
+    def __init__(
+        self,
+        app: ASGIApp,
+        auth_config: AuthConfig,
+        on_error: (
+            typing.Callable[[HTTPConnection, AuthenticationError], Response] | None
+        ) = None,
+    ) -> None:
+        self.app = app
         self.auth_config = auth_config
         self.jwt_handler = jwt_handler.JWTHandler(auth_config)
+        self.on_error: typing.Callable[
+            [HTTPConnection, AuthenticationError], Response
+        ] = (on_error if on_error is not None else self.default_on_error)
 
-    async def dispatch(self, request: Request, call_next):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Middleware to authenticate incoming requests"""
         # Skip authentication for OAuth endpoints
+        request = Request(scope, receive, send)
         if request.url.path == self.auth_config.OAUTH_TOKEN_URL:
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
 
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             logger.error("No authorization header provided")
-            return JSONResponse(
-                content={"error": "No authorization header provided"}, status_code=401
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"application/json")],
+                }
             )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": b'{"error":"No authorization header provided"}',
+                }
+            )
+            return
 
         try:
             logger.debug(
@@ -57,9 +84,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
             client_id = payload.get("sub")
             if not client_id or client_id not in self.auth_config.ALLOWED_CLIENTS:
                 logger.error(f"Invalid client ID: {client_id}")
-                return JSONResponse(
-                    content={"error": "Invalid client ID"}, status_code=401
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 401,
+                        "headers": [(b"content-type", b"application/json")],
+                    }
                 )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": b'{"error":"Invalid client ID"}',
+                    }
+                )
+                return
 
             # Validate scopes
             token_scopes = payload.get("scope", "").split()
@@ -70,10 +108,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 logger.error(
                     f"Invalid scopes. Required: {required_scopes}, Got: {token_scopes}"
                 )
-                return JSONResponse(
-                    content={"error": "Insufficient scope"},
-                    status_code=403,  # Use 403 Forbidden for scope issues
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 403,
+                        "headers": [(b"content-type", b"application/json")],
+                    }
                 )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": b'{"error":"Insufficient scope"}',
+                    }
+                )
+                return
 
             # Process patient context if present
             patient_id = payload.get("patient")
@@ -85,10 +133,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 logger.error(
                     "Patient-context scopes requested but no patient ID in token"
                 )
-                return JSONResponse(
-                    content={"error": "Patient-context scopes require patient ID"},
-                    status_code=403,
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 403,
+                        "headers": [(b"content-type", b"application/json")],
+                    }
                 )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": b'{"error":"Patient-context scopes require patient ID"}',
+                    }
+                )
+                return
 
             logger.info(f"Authentication successful for client: {client_id}")
             # Add the authenticated client info to the request state
@@ -97,23 +155,58 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if patient_id:
                 request.state.patient_id = patient_id
 
-            return await call_next(request)
+            await self.app(scope, receive, send)
+
         except InvalidTokenError as e:
             logger.error(
                 f"Authentication failed: Invalid Token - {str(e)}", exc_info=False
             )
-            return JSONResponse(
-                content={"error": f"Authentication failed: {str(e)}"}, status_code=401
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": f'{{"error":"Authentication failed: {str(e)}"}}'.encode(),
+                }
             )
         except ScopeError as e:
             logger.error(
                 f"Authorization failed: Scope error - {str(e)}", exc_info=False
             )
-            return JSONResponse(
-                content={"error": f"Authorization failed: {str(e)}"}, status_code=403
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 403,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": f'{{"error":"Authorization failed: {str(e)}"}}'.encode(),
+                }
             )
         except Exception as e:
             logger.error(f"Authentication failed: {str(e)}", exc_info=True)
-            return JSONResponse(
-                content={"error": f"Authentication failed: {str(e)}"}, status_code=401
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"application/json")],
+                }
             )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": f'{{"error":"Authentication failed: {str(e)}"}}'.encode(),
+                }
+            )
+
+    @staticmethod
+    def default_on_error(conn: HTTPConnection, exc: Exception) -> Response:
+        return PlainTextResponse(str(exc), status_code=400)

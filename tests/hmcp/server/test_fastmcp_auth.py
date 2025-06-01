@@ -36,50 +36,76 @@ def mock_utils():
 @pytest.fixture
 def auth_middleware(mock_auth_config, mock_jwt_handler):
     """Create AuthMiddleware instance with mocked config"""
-    app = Mock()
+    app = AsyncMock()
     middleware = AuthMiddleware(app, mock_auth_config)
     # Replace the JWT handler with our mock
     middleware.jwt_handler = mock_jwt_handler
     return middleware
 
 
+@pytest.fixture
+def mock_scope():
+    """Create a mock ASGI scope"""
+    return {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/endpoint",
+        "headers": [],
+        "state": {}
+    }
+
+
+@pytest.fixture
+def mock_receive():
+    """Create a mock ASGI receive function"""
+    return AsyncMock()
+
+
+@pytest.fixture
+def mock_send():
+    """Create a mock ASGI send function"""
+    return AsyncMock()
+
+
 @pytest.mark.asyncio
-async def test_oauth_endpoint_bypass(auth_middleware, mock_auth_config):
+async def test_oauth_endpoint_bypass(auth_middleware, mock_auth_config, mock_scope, mock_receive, mock_send):
     """Test that OAuth endpoints bypass authentication"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = mock_auth_config.OAUTH_TOKEN_URL
+    mock_scope["path"] = mock_auth_config.OAUTH_TOKEN_URL
 
-    mock_call_next = AsyncMock()
-    mock_call_next.return_value = "response"
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    result = await auth_middleware.dispatch(mock_request, mock_call_next)
-
-    assert result == "response"
-    mock_call_next.assert_called_once_with(mock_request)
+    auth_middleware.app.assert_called_once_with(
+        mock_scope, mock_receive, mock_send)
 
 
 @pytest.mark.asyncio
-async def test_missing_auth_header(auth_middleware):
+async def test_missing_auth_header(auth_middleware, mock_scope, mock_receive, mock_send):
     """Test request with missing authorization header"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {}
+    mock_scope["headers"] = []
 
-    result = await auth_middleware.dispatch(mock_request, AsyncMock())
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 401
-    assert result.body == b'{"error":"No authorization header provided"}'
+    # Verify both start and body messages were sent
+    assert mock_send.call_count == 2
+
+    # Check start message
+    start_call = mock_send.call_args_list[0][0][0]
+    assert start_call["type"] == "http.response.start"
+    assert start_call["status"] == 401
+    assert start_call["headers"] == [(b"content-type", b"application/json")]
+
+    # Check body message
+    body_call = mock_send.call_args_list[1][0][0]
+    assert body_call["type"] == "http.response.body"
+    assert body_call["body"] == b'{"error":"No authorization header provided"}'
 
 
 @pytest.mark.asyncio
-async def test_successful_authentication(auth_middleware, mock_utils, mock_jwt_handler):
+async def test_successful_authentication(auth_middleware, mock_utils, mock_jwt_handler, mock_scope, mock_receive, mock_send):
     """Test successful authentication flow"""
-    # Mock request
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "Bearer test_token"}
-    mock_request.state = Mock()
+    # Setup scope with auth header
+    mock_scope["headers"] = [(b"authorization", b"Bearer test_token")]
+    mock_scope["state"] = {}
 
     # Mock token parsing and verification
     mock_utils.parse_auth_header.return_value = "parsed_token"
@@ -89,31 +115,26 @@ async def test_successful_authentication(auth_middleware, mock_utils, mock_jwt_h
         "patient": "123",
     }
 
-    # Mock next middleware
-    mock_call_next = AsyncMock()
-    mock_call_next.return_value = "success_response"
-
-    result = await auth_middleware.dispatch(mock_request, mock_call_next)
-
-    # Verify the result
-    assert result == "success_response"
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
     # Verify token parsing and verification
     mock_utils.parse_auth_header.assert_called_once_with("Bearer test_token")
     mock_jwt_handler.verify_token.assert_called_once_with("parsed_token")
 
     # Verify request state was updated
-    assert mock_request.state.client_id == "test_client"
-    assert mock_request.state.scopes == ["patient/read", "patient/write"]
-    assert mock_request.state.patient_id == "123"
+    assert mock_scope["state"]["client_id"] == "test_client"
+    assert mock_scope["state"]["scopes"] == ["patient/read", "patient/write"]
+    assert mock_scope["state"]["patient_id"] == "123"
+
+    # Verify app was called
+    auth_middleware.app.assert_called_once_with(
+        mock_scope, mock_receive, mock_send)
 
 
 @pytest.mark.asyncio
-async def test_invalid_client_id(auth_middleware, mock_utils, mock_jwt_handler):
+async def test_invalid_client_id(auth_middleware, mock_utils, mock_jwt_handler, mock_scope, mock_receive, mock_send):
     """Test authentication with invalid client ID"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "Bearer test_token"}
+    mock_scope["headers"] = [(b"authorization", b"Bearer test_token")]
 
     mock_utils.parse_auth_header.return_value = "parsed_token"
     mock_jwt_handler.verify_token.return_value = {
@@ -121,19 +142,27 @@ async def test_invalid_client_id(auth_middleware, mock_utils, mock_jwt_handler):
         "scope": "patient/read",
     }
 
-    result = await auth_middleware.dispatch(mock_request, AsyncMock())
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 401
-    assert result.body == b'{"error":"Invalid client ID"}'
+    # Verify both start and body messages were sent
+    assert mock_send.call_count == 2
+
+    # Check start message
+    start_call = mock_send.call_args_list[0][0][0]
+    assert start_call["type"] == "http.response.start"
+    assert start_call["status"] == 401
+    assert start_call["headers"] == [(b"content-type", b"application/json")]
+
+    # Check body message
+    body_call = mock_send.call_args_list[1][0][0]
+    assert body_call["type"] == "http.response.body"
+    assert body_call["body"] == b'{"error":"Invalid client ID"}'
 
 
 @pytest.mark.asyncio
-async def test_insufficient_scope(auth_middleware, mock_utils, mock_jwt_handler):
+async def test_insufficient_scope(auth_middleware, mock_utils, mock_jwt_handler, mock_scope, mock_receive, mock_send):
     """Test authentication with insufficient scopes"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "Bearer test_token"}
+    mock_scope["headers"] = [(b"authorization", b"Bearer test_token")]
 
     mock_utils.parse_auth_header.return_value = "parsed_token"
     mock_jwt_handler.verify_token.return_value = {
@@ -141,19 +170,27 @@ async def test_insufficient_scope(auth_middleware, mock_utils, mock_jwt_handler)
         "scope": "patient/read",  # Missing patient/write scope
     }
 
-    result = await auth_middleware.dispatch(mock_request, AsyncMock())
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 403
-    assert result.body == b'{"error":"Insufficient scope"}'
+    # Verify both start and body messages were sent
+    assert mock_send.call_count == 2
+
+    # Check start message
+    start_call = mock_send.call_args_list[0][0][0]
+    assert start_call["type"] == "http.response.start"
+    assert start_call["status"] == 403
+    assert start_call["headers"] == [(b"content-type", b"application/json")]
+
+    # Check body message
+    body_call = mock_send.call_args_list[1][0][0]
+    assert body_call["type"] == "http.response.body"
+    assert body_call["body"] == b'{"error":"Insufficient scope"}'
 
 
 @pytest.mark.asyncio
-async def test_missing_patient_id(auth_middleware, mock_utils, mock_jwt_handler):
+async def test_missing_patient_id(auth_middleware, mock_utils, mock_jwt_handler, mock_scope, mock_receive, mock_send):
     """Test patient-context scopes without patient ID"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "Bearer test_token"}
+    mock_scope["headers"] = [(b"authorization", b"Bearer test_token")]
 
     mock_utils.parse_auth_header.return_value = "parsed_token"
     mock_jwt_handler.verify_token.return_value = {
@@ -161,70 +198,104 @@ async def test_missing_patient_id(auth_middleware, mock_utils, mock_jwt_handler)
         "scope": "patient/read patient/write",  # Patient scopes without patient ID
     }
 
-    result = await auth_middleware.dispatch(mock_request, AsyncMock())
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 403
-    assert result.body == b'{"error":"Patient-context scopes require patient ID"}'
+    # Verify both start and body messages were sent
+    assert mock_send.call_count == 2
+
+    # Check start message
+    start_call = mock_send.call_args_list[0][0][0]
+    assert start_call["type"] == "http.response.start"
+    assert start_call["status"] == 403
+    assert start_call["headers"] == [(b"content-type", b"application/json")]
+
+    # Check body message
+    body_call = mock_send.call_args_list[1][0][0]
+    assert body_call["type"] == "http.response.body"
+    assert body_call["body"] == b'{"error":"Patient-context scopes require patient ID"}'
 
 
 @pytest.mark.asyncio
-async def test_invalid_token_error(auth_middleware, mock_utils, mock_jwt_handler):
+async def test_invalid_token_error(auth_middleware, mock_utils, mock_jwt_handler, mock_scope, mock_receive, mock_send):
     """Test handling of InvalidTokenError"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "Bearer test_token"}
+    mock_scope["headers"] = [(b"authorization", b"Bearer test_token")]
 
     mock_utils.parse_auth_header.return_value = "parsed_token"
-    mock_jwt_handler.verify_token.side_effect = InvalidTokenError("Token expired")
+    mock_jwt_handler.verify_token.side_effect = InvalidTokenError(
+        "Token expired")
 
-    result = await auth_middleware.dispatch(mock_request, AsyncMock())
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 401
-    assert result.body == b'{"error":"Authentication failed: Token expired"}'
+    # Verify both start and body messages were sent
+    assert mock_send.call_count == 2
+
+    # Check start message
+    start_call = mock_send.call_args_list[0][0][0]
+    assert start_call["type"] == "http.response.start"
+    assert start_call["status"] == 401
+    assert start_call["headers"] == [(b"content-type", b"application/json")]
+
+    # Check body message
+    body_call = mock_send.call_args_list[1][0][0]
+    assert body_call["type"] == "http.response.body"
+    assert body_call["body"] == b'{"error":"Authentication failed: Token expired"}'
 
 
 @pytest.mark.asyncio
-async def test_scope_error(auth_middleware, mock_utils, mock_jwt_handler):
+async def test_scope_error(auth_middleware, mock_utils, mock_jwt_handler, mock_scope, mock_receive, mock_send):
     """Test handling of ScopeError"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "Bearer test_token"}
+    mock_scope["headers"] = [(b"authorization", b"Bearer test_token")]
 
     mock_utils.parse_auth_header.return_value = "parsed_token"
-    mock_jwt_handler.verify_token.side_effect = ScopeError("Invalid scope format")
+    mock_jwt_handler.verify_token.side_effect = ScopeError(
+        "Invalid scope format")
 
-    result = await auth_middleware.dispatch(mock_request, AsyncMock())
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 403
-    assert result.body == b'{"error":"Authorization failed: Invalid scope format"}'
+    # Verify both start and body messages were sent
+    assert mock_send.call_count == 2
+
+    # Check start message
+    start_call = mock_send.call_args_list[0][0][0]
+    assert start_call["type"] == "http.response.start"
+    assert start_call["status"] == 403
+    assert start_call["headers"] == [(b"content-type", b"application/json")]
+
+    # Check body message
+    body_call = mock_send.call_args_list[1][0][0]
+    assert body_call["type"] == "http.response.body"
+    assert body_call["body"] == b'{"error":"Authorization failed: Invalid scope format"}'
 
 
 @pytest.mark.asyncio
-async def test_general_exception(auth_middleware, mock_utils, mock_jwt_handler):
+async def test_general_exception(auth_middleware, mock_utils, mock_jwt_handler, mock_scope, mock_receive, mock_send):
     """Test handling of general exceptions"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "Bearer test_token"}
+    mock_scope["headers"] = [(b"authorization", b"Bearer test_token")]
 
     mock_utils.parse_auth_header.return_value = "parsed_token"
     mock_jwt_handler.verify_token.side_effect = Exception("Unexpected error")
 
-    result = await auth_middleware.dispatch(mock_request, AsyncMock())
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 401
-    assert result.body == b'{"error":"Authentication failed: Unexpected error"}'
+    # Verify both start and body messages were sent
+    assert mock_send.call_count == 2
+
+    # Check start message
+    start_call = mock_send.call_args_list[0][0][0]
+    assert start_call["type"] == "http.response.start"
+    assert start_call["status"] == 401
+    assert start_call["headers"] == [(b"content-type", b"application/json")]
+
+    # Check body message
+    body_call = mock_send.call_args_list[1][0][0]
+    assert body_call["type"] == "http.response.body"
+    assert body_call["body"] == b'{"error":"Authentication failed: Unexpected error"}'
 
 
 @pytest.mark.asyncio
-async def test_empty_scope_string(auth_middleware, mock_utils, mock_jwt_handler):
+async def test_empty_scope_string(auth_middleware, mock_utils, mock_jwt_handler, mock_scope, mock_receive, mock_send):
     """Test authentication with empty scope string"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "Bearer test_token"}
+    mock_scope["headers"] = [(b"authorization", b"Bearer test_token")]
 
     mock_utils.parse_auth_header.return_value = "parsed_token"
     mock_jwt_handler.verify_token.return_value = {
@@ -232,41 +303,54 @@ async def test_empty_scope_string(auth_middleware, mock_utils, mock_jwt_handler)
         "scope": "",  # Empty scope string
     }
 
-    result = await auth_middleware.dispatch(mock_request, AsyncMock())
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 403
-    assert result.body == b'{"error":"Insufficient scope"}'
+    # Verify both start and body messages were sent
+    assert mock_send.call_count == 2
+
+    # Check start message
+    start_call = mock_send.call_args_list[0][0][0]
+    assert start_call["type"] == "http.response.start"
+    assert start_call["status"] == 403
+    assert start_call["headers"] == [(b"content-type", b"application/json")]
+
+    # Check body message
+    body_call = mock_send.call_args_list[1][0][0]
+    assert body_call["type"] == "http.response.body"
+    assert body_call["body"] == b'{"error":"Insufficient scope"}'
 
 
 @pytest.mark.asyncio
-async def test_malformed_auth_header(auth_middleware, mock_utils):
+async def test_malformed_auth_header(auth_middleware, mock_utils, mock_scope, mock_receive, mock_send):
     """Test handling of malformed authorization header"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "InvalidFormat"}
+    mock_scope["headers"] = [(b"authorization", b"InvalidFormat")]
 
     mock_utils.parse_auth_header.side_effect = InvalidTokenError(
         "Invalid authorization header format"
     )
 
-    result = await auth_middleware.dispatch(mock_request, AsyncMock())
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 401
-    assert (
-        result.body
-        == b'{"error":"Authentication failed: Invalid authorization header format"}'
-    )
+    # Verify both start and body messages were sent
+    assert mock_send.call_count == 2
+
+    # Check start message
+    start_call = mock_send.call_args_list[0][0][0]
+    assert start_call["type"] == "http.response.start"
+    assert start_call["status"] == 401
+    assert start_call["headers"] == [(b"content-type", b"application/json")]
+
+    # Check body message
+    body_call = mock_send.call_args_list[1][0][0]
+    assert body_call["type"] == "http.response.body"
+    assert body_call["body"] == b'{"error":"Authentication failed: Invalid authorization header format"}'
 
 
 @pytest.mark.asyncio
-async def test_multiple_patient_ids(auth_middleware, mock_utils, mock_jwt_handler):
+async def test_multiple_patient_ids(auth_middleware, mock_utils, mock_jwt_handler, mock_scope, mock_receive, mock_send):
     """Test authentication with multiple patient IDs"""
-    mock_request = Mock(spec=Request)
-    mock_request.url.path = "/api/endpoint"
-    mock_request.headers = {"Authorization": "Bearer test_token"}
-    mock_request.state = Mock()
+    mock_scope["headers"] = [(b"authorization", b"Bearer test_token")]
+    mock_scope["state"] = {}
 
     mock_utils.parse_auth_header.return_value = "parsed_token"
     mock_jwt_handler.verify_token.return_value = {
@@ -275,12 +359,13 @@ async def test_multiple_patient_ids(auth_middleware, mock_utils, mock_jwt_handle
         "patient": ["123", "456"],  # Multiple patient IDs
     }
 
-    mock_call_next = AsyncMock()
-    mock_call_next.return_value = "success_response"
+    await auth_middleware(mock_scope, mock_receive, mock_send)
 
-    result = await auth_middleware.dispatch(mock_request, mock_call_next)
+    # Verify request state was updated
+    assert mock_scope["state"]["client_id"] == "test_client"
+    assert mock_scope["state"]["scopes"] == ["patient/read", "patient/write"]
+    assert mock_scope["state"]["patient_id"] == ["123", "456"]
 
-    assert result == "success_response"
-    assert mock_request.state.client_id == "test_client"
-    assert mock_request.state.scopes == ["patient/read", "patient/write"]
-    assert mock_request.state.patient_id == ["123", "456"]
+    # Verify app was called
+    auth_middleware.app.assert_called_once_with(
+        mock_scope, mock_receive, mock_send)

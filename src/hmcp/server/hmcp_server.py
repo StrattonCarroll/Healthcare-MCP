@@ -9,8 +9,11 @@ from mcp.server.lowlevel.server import NotificationOptions
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
 from starlette.applications import Starlette
+from starlette.responses import Response
 from starlette.requests import Request
 from starlette.routing import Mount, Route
+from starlette.types import Receive, Scope, Send
+from starlette.middleware import Middleware
 from mcp.server.models import InitializationOptions
 from pydantic import RootModel
 from hmcp.shared.auth import OAuthServer, AuthConfig, jwt_handler
@@ -188,34 +191,50 @@ class HMCPServer(FastMCP):
         self._original_get_capabilities = self._mcp_server.get_capabilities
         self._mcp_server.get_capabilities = self.patched_get_capabilities
 
-    def sse_app(self) -> Starlette:
+    def sse_app(self, mount_path: str | None = None) -> Starlette:
         """Return an instance of the SSE server app with authentication middleware."""
         logger.info("Creating SSE app with authentication middleware")
         sse = SseServerTransport(self.settings.message_path)
 
-        async def handle_sse(request: Request) -> None:
+        async def handle_sse(scope: Scope, receive: Receive, send: Send):
+            # Add client ID from auth context into request context if available
+
             async with sse.connect_sse(
-                request.scope,
-                request.receive,
-                request._send,  # type: ignore[reportPrivateUsage]
+                scope,
+                receive,
+                send,
             ) as streams:
                 await self._mcp_server.run(
                     streams[0],
                     streams[1],
                     self._mcp_server.create_initialization_options(),
                 )
+            return Response()
+
+        async def sse_endpoint(request: Request) -> Response:
+            # Convert the Starlette request to ASGI parameters
+            return await handle_sse(request.scope, request.receive, request._send)
+
+        # Create routes
+        routes: list[Route | Mount] = [
+            Route(self.settings.sse_path, endpoint=sse_endpoint),
+            Mount(self.settings.message_path, app=sse.handle_post_message),
+        ]
+
+        # Add authentication middleware
+        middleware: list[Middleware] = [
+            Middleware(
+                AuthMiddleware,
+                auth_config=self.auth_config,
+            ),
+        ]
 
         # Create the base app
         app = Starlette(
             debug=self.settings.debug,
-            routes=[
-                Route(self.settings.sse_path, endpoint=handle_sse),
-                Mount(self.settings.message_path, app=sse.handle_post_message),
-            ],
+            routes=routes,
+            middleware=middleware,
         )
-
-        # Add authentication middleware
-        app.add_middleware(AuthMiddleware, auth_config=self.auth_config)
 
         return app
 

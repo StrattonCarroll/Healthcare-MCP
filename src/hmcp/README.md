@@ -165,7 +165,7 @@ The demo shows how agents can communicate with each other, request additional in
 1. Clone the repository
 2. Install the package in development mode with test dependencies:
 ```bash
-pip install -e ".[test]"
+pip install -e ".[dev]"
 ```
 
 ### Running Tests

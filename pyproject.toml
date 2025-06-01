@@ -18,17 +18,19 @@ dependencies = [
     "python-jose>=3.3.0",
     "cryptography>=41.0.0",
     "nemoguardrails==0.13.0",
-    "langchain-openai==0.3.14"
+    "langchain-openai==0.3.14",
+    "openai-agents==0.0.16"
 ]
 
 [project.optional-dependencies]
-test = [
+dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.1",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.11.1",
     "black==25.1.0"
 ]
+
 
 [build-system]
 requires = ["hatchling"]
